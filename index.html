@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>机房数字孪生 · 3D</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#050d18;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
+  #app{position:fixed;inset:0;}
+  #labels{position:fixed;inset:0;pointer-events:none;}
+  .hud{position:fixed;z-index:10;color:#85b7eb;pointer-events:none;}
+  #topbar{top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:baseline;padding:16px 26px;}
+  #topbar .title{color:#b5d4f4;font-size:14px;letter-spacing:4px;text-shadow:0 0 12px rgba(62,201,255,.6);}
+  #topbar .meta{color:#378add;font-size:12px;letter-spacing:1px;}
+  #legend{top:52px;left:26px;font-size:12px;display:flex;gap:16px;}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:-1px;}
+  #stats{bottom:0;left:0;right:0;display:flex;gap:22px;flex-wrap:wrap;align-items:center;padding:12px 26px;font-size:13px;
+    background:linear-gradient(0deg,rgba(5,13,24,.9),rgba(5,13,24,0));border-top:1px solid rgba(24,95,165,.35);}
+  #stats b{font-weight:500;color:#b5d4f4;font-style:normal;}
+  #stats .hint{color:#2a5b8f;margin-left:auto;}
+  .corner{position:fixed;width:22px;height:22px;z-index:10;pointer-events:none;
+    border:0 solid #378add;filter:drop-shadow(0 0 6px rgba(62,201,255,.7));}
+  #c1{top:10px;left:10px;border-top-width:2px;border-left-width:2px;}
+  #c2{top:10px;right:10px;border-top-width:2px;border-right-width:2px;}
+  #c3{bottom:10px;left:10px;border-bottom-width:2px;border-left-width:2px;}
+  #c4{bottom:10px;right:10px;border-bottom-width:2px;border-right-width:2px;}
+  #overlay{position:fixed;inset:0;z-index:5;pointer-events:none;
+    background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.55)),
+    repeating-linear-gradient(0deg,rgba(133,183,235,.025) 0 1px,transparent 1px 3px);}
+  .callout{font-size:12px;padding:3px 10px;white-space:nowrap;background:rgba(8,19,31,.78);
+    border:1px solid rgba(255,200,97,.55);color:#ffc861;text-shadow:0 0 8px rgba(255,200,97,.8);
+    box-shadow:0 0 14px rgba(255,200,97,.18);}
+  .callout.down{border-color:rgba(255,107,107,.55);color:#ff6b6b;text-shadow:0 0 8px rgba(255,107,107,.8);
+    box-shadow:0 0 14px rgba(255,107,107,.18);}
+  #loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:20;
+    color:#3ec9ff;font-size:13px;letter-spacing:6px;text-shadow:0 0 14px rgba(62,201,255,.9);}
+</style>
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="overlay"></div>
+<div id="loading">INITIALIZING…</div>
+<div class="hud" id="topbar">
+  <span class="title">ZONE-A · 机房数字孪生</span>
+  <span class="meta"><span id="clock">--:--:--</span> · 25 节点 · 23 在线 · 1 告警 · 1 离线</span>
+</div>
+<div class="hud" id="legend">
+  <span><i class="dot" style="background:#53e0a8;box-shadow:0 0 8px #53e0a8;"></i>在线</span>
+  <span><i class="dot" style="background:#ffc861;box-shadow:0 0 8px #ffc861;"></i>告警</span>
+  <span><i class="dot" style="background:#ff6b6b;box-shadow:0 0 8px #ff6b6b;"></i>离线</span>
+</div>
+<div class="hud" id="stats">
+  <span>节点 <b id="q-id">—</b></span>
+  <span>状态 <b id="q-st">—</b></span>
+  <span>CPU <b id="q-cpu">—</b></span>
+  <span>内存 <b id="q-mem">—</b></span>
+  <span>温度 <b id="q-temp">—</b></span>
+  <span>已运行 <b id="q-up">—</b></span>
+  <span class="hint">拖拽旋转 · 滚轮缩放 · 点击服务器查看数据</span>
+</div>
+<div class="corner" id="c1"></div><div class="corner" id="c2"></div>
+<div class="corner" id="c3"></div><div class="corner" id="c4"></div>
+
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js';
+import {RenderPass} from 'three/addons/postprocessing/RenderPass.js';
+import {UnrealBloomPass} from 'three/addons/postprocessing/UnrealBloomPass.js';
+import {OutputPass} from 'three/addons/postprocessing/OutputPass.js';
+import {CSS2DRenderer, CSS2DObject} from 'three/addons/renderers/CSS2DRenderer.js';
+import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
+
+const COL = {ok:0x53e0a8, warn:0xffc861, down:0xff6b6b};
+const statusOf = (r,s)=> (r===2&&s===1)?'warn':(r===4&&s===3)?'down':'ok';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x050d18);
+scene.fog = new THREE.FogExp2(0x050d18, 0.026);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 200);
+camera.position.set(6.5, 4.2, 8.5);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.25;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+labelRenderer.domElement.style.position = 'fixed';
+labelRenderer.domElement.style.top = '0';
+labelRenderer.domElement.style.pointerEvents = 'none';
+document.getElementById('labels').appendChild(labelRenderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1.1, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minDistance = 5;
+controls.maxDistance = 26;
+controls.maxPolarAngle = Math.PI/2 - 0.05;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.6;
+let idleTimer = null;
+controls.addEventListener('start', ()=>{ controls.autoRotate = false; clearTimeout(idleTimer); });
+controls.addEventListener('end', ()=>{ idleTimer = setTimeout(()=>controls.autoRotate = true, 5000); });
+
+scene.add(new THREE.AmbientLight(0x3d5470, 1.9));
+const key = new THREE.DirectionalLight(0xdfeeff, 2.2);
+key.position.set(6, 12, 7);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.left = -10; key.shadow.camera.right = 10;
+key.shadow.camera.top = 10; key.shadow.camera.bottom = -10;
+scene.add(key);
+const rim = new THREE.PointLight(0x1e6fd8, 30, 30);
+rim.position.set(-6, 3, -5);
+scene.add(rim);
+const rim2 = new THREE.PointLight(0x0fa8a0, 18, 25);
+rim2.position.set(6, 2.5, 5);
+scene.add(rim2);
+
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(120, 120),
+  new THREE.MeshStandardMaterial({color:0x07111d, roughness:0.92, metalness:0.1})
+);
+floor.rotation.x = -Math.PI/2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+const grid = new THREE.GridHelper(90, 90, 0x1b5c8a, 0x0c2f50);
+grid.position.y = 0.01;
+grid.material.transparent = true;
+grid.material.opacity = 0.55;
+scene.add(grid);
+
+const matFrame = new THREE.MeshStandardMaterial({color:0x18222f, metalness:0.78, roughness:0.36});
+const matChassis = new THREE.MeshStandardMaterial({color:0x232e3f, metalness:0.68, roughness:0.42});
+const matBezel = new THREE.MeshStandardMaterial({color:0x2c3849, metalness:0.55, roughness:0.5});
+const matBezelDown = new THREE.MeshStandardMaterial({color:0x1a2230, metalness:0.55, roughness:0.6});
+const matBay = new THREE.MeshStandardMaterial({color:0x0b131f, metalness:0.3, roughness:0.85});
+const edgeMat = new THREE.LineBasicMaterial({color:0x3ec9ff, transparent:true, opacity:0.22});
+[matFrame, matChassis, matBezel, matBezelDown, matBay].forEach(m=>{ m.envMapIntensity = 0.85; });
+
+function box(w,h,d,mat,x,y,z,parent,shadow=true){
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat);
+  m.position.set(x,y,z);
+  if(shadow){ m.castShadow = true; m.receiveShadow = true; }
+  parent.add(m);
+  return m;
+}
+function glow(w,h,d,color,x,y,z,parent){
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d),
+    new THREE.MeshBasicMaterial({color}));
+  m.position.set(x,y,z);
+  parent.add(m);
+  return m;
+}
+function edges(mesh, parent){
+  const e = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), edgeMat);
+  e.position.copy(mesh.position);
+  parent.add(e);
+}
+
+const servers = [];
+const pickables = [];
+const rings = [];
+const bars = [];
+const blinkers = [];
+
+function makeRing(radius, color, parent){
+  const g = new THREE.Group();
+  for(let i=0;i<4;i++){
+    const arc = new THREE.Mesh(
+      new THREE.RingGeometry(radius, radius+0.025, 48, 1, i*Math.PI/2+0.18, Math.PI/2-0.36),
+      new THREE.MeshBasicMaterial({color, transparent:true, opacity:0.7, side:THREE.DoubleSide,
+        blending:THREE.AdditiveBlending, depthWrite:false})
+    );
+    g.add(arc);
+  }
+  g.rotation.x = -Math.PI/2;
+  g.position.y = 0.02;
+  parent.add(g);
+  rings.push(g);
+  return g;
+}
+
+function makeServer(r, s){
+  const st = statusOf(r,s), k = r*5+s;
+  const g = new THREE.Group();
+  const chassis = box(1.0, 0.26, 0.85, matChassis, 0, 0, 0, g);
+  chassis.userData = {r, s};
+  pickables.push(chassis);
+  box(1.06, 0.28, 0.05, st==='down'?matBezelDown:matBezel, 0, 0, 0.44, g);
+  for(let b=0;b<3;b++){
+    const bx = -0.36 + b*0.2;
+    box(0.16, 0.15, 0.03, matBay, bx, 0, 0.465, g);
+    if(st!=='down') glow(0.028, 0.028, 0.012, 0x2f9fe8, bx-0.05, -0.045, 0.482, g);
+  }
+  if(st!=='down'){
+    const bar = glow(0.22, 0.032, 0.012, st==='warn'?COL.warn:0x2fd8c8, 0.24, -0.05, 0.472, g);
+    bar.userData = {phase: k*1.7, speed: 0.6 + (k%5)*0.22};
+    bars.push(bar);
+  }
+  const led = glow(0.05, 0.05, 0.014, COL[st], 0.42, 0.06, 0.472, g);
+  if(st!=='ok') blinkers.push({mesh:led, st, phase:k});
+  const hl = new THREE.LineSegments(new THREE.EdgesGeometry(chassis.geometry),
+    new THREE.LineBasicMaterial({color:0x8fe0ff, transparent:true, opacity:0}));
+  g.add(hl);
+  servers.push({group:g, r, s, st, hl, led});
+  return g;
+}
+
+for(let r=0;r<5;r++){
+  const rack = new THREE.Group();
+  rack.position.x = (r-2)*2.2;
+  const plinth = box(1.4, 0.16, 1.1, matFrame, 0, 0.08, 0, rack);
+  edges(plinth, rack);
+  const top = box(1.34, 0.08, 1.05, matFrame, 0, 2.34, 0, rack);
+  edges(top, rack);
+  box(0.05, 2.14, 0.95, matFrame, -0.62, 1.23, 0, rack);
+  box(0.05, 2.14, 0.95, matFrame, 0.62, 1.23, 0, rack);
+  box(1.28, 2.14, 0.05, matFrame, 0, 1.23, -0.46, rack);
+  for(let s=0;s<5;s++){
+    const sv = makeServer(r, s);
+    sv.position.set(0, 1.95 - s*0.36, 0.03);
+    rack.add(sv);
+  }
+  makeRing(0.95, 0x1e88d8, rack);
+  scene.add(rack);
+}
+
+const pGeo = new THREE.BufferGeometry();
+const pCount = 320;
+const pPos = new Float32Array(pCount*3);
+for(let i=0;i<pCount;i++){
+  pPos[i*3] = (Math.random()-0.5)*18;
+  pPos[i*3+1] = Math.random()*5;
+  pPos[i*3+2] = (Math.random()-0.5)*10;
+}
+pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+const particles = new THREE.Points(pGeo, new THREE.PointsMaterial({
+  color:0x3ec9ff, size:0.035, transparent:true, opacity:0.55,
+  blending:THREE.AdditiveBlending, depthWrite:false}));
+scene.add(particles);
+
+const scan = new THREE.Group();
+const scanPlane = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 2.9),
+  new THREE.MeshBasicMaterial({color:0x2fb8ff, transparent:true, opacity:0.05,
+    side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false}));
+scanPlane.rotation.y = Math.PI/2;
+const scanLine = new THREE.Mesh(new THREE.PlaneGeometry(0.02, 2.9),
+  new THREE.MeshBasicMaterial({color:0x9fe4ff, transparent:true, opacity:0.5,
+    side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false}));
+scanLine.rotation.y = Math.PI/2;
+scan.add(scanPlane, scanLine);
+scan.position.y = 1.45;
+scene.add(scan);
+
+function callout(text, cls, target, ox, oy){
+  const div = document.createElement('div');
+  div.className = 'callout' + (cls ? ' '+cls : '');
+  div.textContent = text;
+  const obj = new CSS2DObject(div);
+  obj.position.set(ox, oy, 0);
+  target.add(obj);
+}
+const warnSrv = servers.find(v=>v.st==='warn');
+const downSrv = servers.find(v=>v.st==='down');
+callout('A3-02 · CPU 91% · 68°C', '', warnSrv.group, 0.95, 0.55);
+callout('A5-04 · 离线', 'down', downSrv.group, 0.95, 0.55);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.85, 0.45, 0.5);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+function nodeData(r,s){
+  const id = 'A'+(r+1)+'-0'+(s+1), st = statusOf(r,s), k = r*5+s;
+  if(st==='down') return {id, st};
+  return {id, st,
+    cpu: st==='warn'?91:18+(k*7)%52,
+    mem: 35+(k*11)%48,
+    temp: st==='warn'?68:36+(k*3)%9,
+    up: (120+k*17)+' 天'};
+}
+let cur = null, curSrv = null;
+const $ = id => document.getElementById(id);
+const stColor = {ok:'#53e0a8', warn:'#ffc861', down:'#ff6b6b'};
+function renderStats(){
+  if(!cur) return;
+  $('q-id').textContent = cur.id;
+  $('q-st').textContent = cur.st==='ok'?'在线':cur.st==='warn'?'告警':'离线';
+  $('q-st').style.color = stColor[cur.st];
+  if(cur.st==='down'){
+    ['q-cpu','q-mem','q-temp','q-up'].forEach(i=>$(i).textContent='—');
+    return;
+  }
+  const j = (v,a)=>Math.max(1, Math.round(v + (Math.random()*2-1)*a));
+  $('q-cpu').textContent = j(cur.cpu,3)+'%';
+  $('q-mem').textContent = j(cur.mem,2)+'%';
+  $('q-temp').textContent = j(cur.temp,1)+'°C';
+  $('q-up').textContent = cur.up;
+}
+function select(r,s){
+  if(curSrv) curSrv.hl.material.opacity = 0;
+  curSrv = servers.find(v=>v.r===r&&v.s===s);
+  curSrv.hl.material.opacity = 0.95;
+  cur = nodeData(r,s);
+  renderStats();
+}
+select(2,1);
+setInterval(renderStats, 2000);
+function tick(){ $('clock').textContent = new Date().toLocaleTimeString('zh-CN',{hour12:false}); }
+tick(); setInterval(tick, 1000);
+
+const ray = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let downPos = null;
+renderer.domElement.addEventListener('pointerdown', e=>{ downPos = [e.clientX, e.clientY]; });
+renderer.domElement.addEventListener('pointerup', e=>{
+  if(!downPos) return;
+  const dx = e.clientX-downPos[0], dy = e.clientY-downPos[1];
+  downPos = null;
+  if(dx*dx+dy*dy > 25) return;
+  mouse.set(e.clientX/innerWidth*2-1, -(e.clientY/innerHeight)*2+1);
+  ray.setFromCamera(mouse, camera);
+  const hit = ray.intersectObjects(pickables, false)[0];
+  if(hit) select(hit.object.userData.r, hit.object.userData.s);
+});
+renderer.domElement.addEventListener('pointermove', e=>{
+  mouse.set(e.clientX/innerWidth*2-1, -(e.clientY/innerHeight)*2+1);
+  ray.setFromCamera(mouse, camera);
+  renderer.domElement.style.cursor = ray.intersectObjects(pickables, false).length ? 'pointer' : '';
+});
+
+addEventListener('resize', ()=>{
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+  labelRenderer.setSize(innerWidth, innerHeight);
+});
+
+const clock = new THREE.Clock();
+let firstFrame = true;
+function animate(){
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+  controls.update();
+  rings.forEach((g,i)=>{ g.rotation.z = t*(0.25 + i*0.06)*(i%2?1:-1); });
+  bars.forEach(b=>{
+    const v = 0.35 + 0.65*Math.abs(Math.sin(t*b.userData.speed + b.userData.phase));
+    b.scale.x = v;
+    b.position.x = 0.13 + 0.11*v;
+  });
+  blinkers.forEach(b=>{
+    const on = b.st==='warn' ? Math.sin(t*6+b.phase)>0 : Math.sin(t*2.5+b.phase)>0.3;
+    b.mesh.material.color.setHex(on ? COL[b.st] : 0x1a222e);
+  });
+  const pos = pGeo.attributes.position;
+  for(let i=0;i<pCount;i++){
+    let y = pos.getY(i) + 0.0035;
+    if(y>5) y = 0;
+    pos.setY(i, y);
+  }
+  pos.needsUpdate = true;
+  scan.position.x = Math.sin(t*0.22)*7;
+  composer.render();
+  labelRenderer.render(scene, camera);
+  if(firstFrame){ firstFrame = false; document.getElementById('loading').remove(); }
+}
+animate();
+</script>
+</body>
+</html>

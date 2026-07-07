@@ -1,0 +1,22 @@
+[
+  { "hostname": "ascend-01", "rack": "R1", "u": 33, "vendor": "ascend", "ip": "10.20.1.11", "deployed_model": "DeepSeek-R1-70B", "util": 72, "temp": 58, "status": "ok" },
+  { "hostname": "ascend-02", "rack": "R1", "u": 28, "vendor": "ascend", "ip": "10.20.1.12", "deployed_model": "DeepSeek-R1-70B", "util": 68, "temp": 61, "status": "ok" },
+  { "hostname": "ascend-03", "rack": "R1", "u": 23, "vendor": "ascend", "ip": "10.20.1.13", "deployed_model": "Qwen2.5-72B", "util": 91, "temp": 69, "status": "warn" },
+  { "hostname": "ascend-04", "rack": "R1", "u": 18, "vendor": "ascend", "ip": "10.20.1.14", "deployed_model": "Qwen2.5-72B", "util": 55, "temp": 54, "status": "ok" },
+  { "hostname": "ascend-05", "rack": "R1", "u": 13, "vendor": "ascend", "ip": "10.20.1.15", "deployed_model": "GLM-4-Plus", "util": 47, "temp": 52, "status": "ok" },
+  { "hostname": "ascend-06", "rack": "R1", "u": 8,  "vendor": "ascend", "ip": "10.20.1.16", "deployed_model": "GLM-4-Plus", "util": 63, "temp": 57, "status": "ok" },
+  { "hostname": "ascend-07", "rack": "R1", "u": 3,  "vendor": "ascend", "ip": "10.20.1.17", "deployed_model": "PanGu-38B", "util": 30, "temp": 48, "status": "ok" },
+
+  { "hostname": "hygon-01", "rack": "R2", "u": 25, "vendor": "hygon", "ip": "10.20.2.21", "deployed_model": "LLaMA-3.1-70B", "util": 77, "temp": 63, "status": "ok" },
+  { "hostname": "hygon-02", "rack": "R2", "u": 14, "vendor": "hygon", "ip": "10.20.2.22", "deployed_model": "Baichuan2-53B", "util": 82, "temp": 66, "status": "ok" },
+  { "hostname": "hygon-03", "rack": "R2", "u": 3,  "vendor": "hygon", "ip": "10.20.2.23", "deployed_model": "InternLM2-20B", "util": 0, "temp": 0, "status": "down" },
+
+  { "hostname": "t4-01", "rack": "R3", "u": 31, "vendor": "nvidia", "ip": "10.20.3.31", "deployed_model": "Whisper-Large-v3", "util": 41, "temp": 55, "status": "ok" },
+  { "hostname": "t4-02", "rack": "R3", "u": 27, "vendor": "nvidia", "ip": "10.20.3.32", "deployed_model": "Whisper-Large-v3", "util": 38, "temp": 53, "status": "ok" },
+  { "hostname": "t4-03", "rack": "R3", "u": 23, "vendor": "nvidia", "ip": "10.20.3.33", "deployed_model": "YOLOv8-X", "util": 66, "temp": 60, "status": "ok" },
+  { "hostname": "t4-04", "rack": "R3", "u": 19, "vendor": "nvidia", "ip": "10.20.3.34", "deployed_model": "YOLOv8-X", "util": 59, "temp": 58, "status": "ok" },
+  { "hostname": "t4-05", "rack": "R3", "u": 15, "vendor": "nvidia", "ip": "10.20.3.35", "deployed_model": "BERT-Large", "util": 24, "temp": 47, "status": "ok" },
+  { "hostname": "t4-06", "rack": "R3", "u": 11, "vendor": "nvidia", "ip": "10.20.3.36", "deployed_model": "SD-1.5-Turbo", "util": 88, "temp": 71, "status": "warn" },
+  { "hostname": "t4-07", "rack": "R3", "u": 7,  "vendor": "nvidia", "ip": "10.20.3.37", "deployed_model": "Qwen2.5-7B-Int8", "util": 52, "temp": 56, "status": "ok" },
+  { "hostname": "t4-08", "rack": "R3", "u": 3,  "vendor": "nvidia", "ip": "10.20.3.38", "deployed_model": "Qwen2.5-7B-Int8", "util": 45, "temp": 54, "status": "ok" }
+]

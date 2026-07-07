@@ -1,0 +1,40 @@
+{
+  "dataSource": {
+    "type": "json",
+    "url": "./data.json",
+    "refreshInterval": 10
+  },
+  "keyField": "hostname",
+
+  "screen": {
+    "line1": "{vendor_tag}",
+    "line2": "{ip}"
+  },
+
+  "popup": {
+    "title": "{hostname}",
+    "rows": [
+      { "label": "IP",       "value": "{ip}" },
+      { "label": "机柜位置", "value": "{rack} · U{u}" },
+      { "label": "部署模型", "value": "{deployed_model}" },
+      { "label": "利用率",   "value": "{util}%" },
+      { "label": "温度",     "value": "{temp}°C" }
+    ]
+  },
+
+  "hud": [
+    { "label": "节点",     "value": "{hostname}" },
+    { "label": "型号",     "value": "{vendor_name}" },
+    { "label": "IP",       "value": "{ip}" },
+    { "label": "部署模型", "value": "{deployed_model}" },
+    { "label": "利用率",   "value": "{util}%" }
+  ],
+
+  "vendors": {
+    "ascend": { "tag": "ASCEND 910B",   "name": "昇腾 910B",    "accent": "#ff4a3d" },
+    "hygon":  { "tag": "HYGON K100-AI", "name": "海光 K100-AI", "accent": "#ffa02f" },
+    "nvidia": { "tag": "NVIDIA T4",     "name": "NVIDIA T4",    "accent": "#76b900" }
+  },
+
+  "statusColors": { "ok": "#53e0a8", "warn": "#ffc861", "down": "#ff6b6b" }
+}
