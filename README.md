@@ -161,6 +161,110 @@ datacenter-twin-3d/
 └── README.md
 ```
 
+---
+
+# 交接说明（Handover）
+
+> 本节面向接手维护的同事，读完应该能独立定位代码、完成常见修改并部署上线。
+
+## 1. 项目定位与现状
+
+- **是什么**：机房数字孪生的前端可视化 Demo，核心页面 `ai-cluster.html` 已具备接入真实数据的能力（轮询 JSON/API），另外两个页面是效果演进过程中的独立成品，无数据接口。
+- **技术栈**：原生 HTML/CSS/JS + three.js 0.160（ES Module，CDN 引入），无框架、无构建、无 node_modules。改完刷新浏览器即生效。
+- **当前状态**：功能完整可用；数据为示例数据（`data.json`），尚未对接真实 CMDB/监控系统。
+
+## 2. 各文件职责
+
+| 文件 | 行数 | 职责 | 是否依赖其他文件 |
+|------|------|------|------|
+| `ai-cluster.html` | ~720 | 主页面，全部逻辑在一个 `<script type="module">` 里 | 可选读取 config.json、data.json，读不到自动降级 |
+| `config.json` | ~40 | 数据源地址、轮询间隔、字段映射模板、品牌样式、状态色 | 被 ai-cluster.html 读取 |
+| `data.json` | ~22 | 服务器清单示例，模拟数据库表 | 被 config.json 的 dataSource.url 指向 |
+| `server-detail.html` | ~600 | 独立页面：单台 2U 服务器解剖展示，含开盖动画、旋转风扇 | 无 |
+| `index.html` | ~390 | 独立页面：5 机柜全景，自动环绕镜头 | 无 |
+
+三个 HTML **互不引用**，删除任何一个不影响其余。
+
+## 3. ai-cluster.html 代码结构导览
+
+代码按注释分块，从上到下依次是（搜索注释即可跳转）：
+
+1. **`<style>`**：HUD 样式。`.popup` 系列是点击弹窗（毛玻璃 + 四角括号），`#stats` 是底部状态栏，`#overlay` 是全屏扫描线滤镜。
+2. **`数据层`**：`loadJSON`、`DEFAULT_CFG`（内置默认配置，与 config.json 结构完全一致）、`genDemoRows()`（内置演示数据生成器）、config/data 加载与降级逻辑。**改字段映射的默认值在 `DEFAULT_CFG` 里**。
+3. **`场景基础`**：renderer、相机、OrbitControls（`maxDistance 8.6` 限制在房间内）、灯光（key 主光带阴影 / back 背面补光 / fill 氛围点光）。
+4. **`材质与工具`**：共享材质（`matBody` 机身 / `matDark` 深色 / `matFin` 银色金属件…）、`box/glow/cylZ` 三个建模辅助函数、`canvasTex`（canvas→贴图，注意 `anisotropy=8`）、`perfMat`（冲孔板材质）。
+5. **`机房环境`**：地板贴图、`room`（BackSide 反转盒子）、天花灯带、墙脚灯、CRAC 空调 ×2、走线桥架。
+6. **`机柜与服务器`**：`makeScreen(row)` 生成机身 IP 屏（返回 `{mat, draw}`，`draw()` 可重复调用刷新文字）；`caddy()` 单个硬盘仓；`makeServer(row, h)` 服务器工厂函数（**按高度 h 自动决定 1/2/3 排硬盘仓**）；机柜循环（由 `racksData` 驱动，机柜 X 坐标自动均布）。
+7. **`弹窗 + HUD`**：`renderPopup/showPopup/hidePopup`、引线 `leader`、底部状态栏由 `CFG.hud` 动态生成。
+8. **`数据刷新`**：`setInterval` 轮询，按 `keyField` 匹配后 `Object.assign` 合并数据行，再触发 `screen.draw()` / 弹窗 / HUD 重绘。
+9. **`交互`**：Raycaster 拾取（只检测 `pickables` 数组里的机箱主体）、点击 vs 拖拽的 5px 判定、hover 光标。
+10. **`animate()`**：渲染循环——光环旋转、LED 群闪、扫描光片、粒子上浮、弹窗视口钳制（margin 拉回）都在这里逐帧执行。
+
+## 4. 核心数据流
+
+```
+config.json（可选，缺省用 DEFAULT_CFG）
+   │  dataSource.url / 字段映射模板
+   ▼
+data.json 或 API（缺省用 genDemoRows 随机数据）
+   │  ROWS: 一行 = 一台服务器
+   ▼
+racksData（按 rack 列分组、按 u 列降序排列）
+   │
+   ▼
+构建 3D 场景：每行 → makeServer(row) → 机身屏幕 makeScreen(row)
+   │
+   ▼  每 refreshInterval 秒
+轮询数据源 → 按 keyField 匹配 → Object.assign 更新 row
+   → screen.draw() 重绘机身屏幕
+   → renderPopup / renderHud 更新弹窗和状态栏
+```
+
+关键约定：
+- **`keyField`（默认 hostname）是唯一主键**，轮询靠它匹配服务器，值必须稳定；
+- **拓扑（机柜数/台数/U位）只在页面加载时构建**，轮询只更新显示内容。增删机器需刷新页面；
+- 模板占位符 `{列名}` 直接取数据行字段，另有两个派生字段：`{vendor_tag}`、`{vendor_name}`（来自 config.vendors）。
+
+## 5. 常见修改任务速查
+
+| 任务 | 做法 |
+|------|------|
+| 加一台服务器 | data.json 加一行（rack 写已有机柜名），刷新页面 |
+| 加一个机柜 | data.json 中使用新的 rack 名即可，机柜会自动出现并均布 |
+| 弹窗加一行（如"负责人"） | 数据行加列 `owner`，config.json 的 `popup.rows` 加 `{"label":"负责人","value":"{owner}"}` |
+| 换机身屏幕显示内容 | 改 `config.screen.line1/line2` 模板 |
+| 新增硬件品牌 | config.json 的 `vendors` 加一项（tag/name/accent），数据行 vendor 填新 key |
+| 改状态灯颜色/新增状态 | config.json 的 `statusColors`；闪烁频率在 `makeServer` 的 `stSpeed` 处 |
+| 接真实数据库 | 后端出一个返回 JSON 数组的接口（见上文 FastAPI 示例），改 `dataSource.url`，注意 CORS |
+| 调初始镜头 | `camera.position.set(...)` 与 `controls.target.set(...)` |
+| 房间尺寸 | `room` 的 BoxGeometry 和地板 PlaneGeometry，同时记得调 `controls.maxDistance` |
+| 关掉演示数据降级 | 把 `catch` 里 `usingDemo=true` 分支改回抛错即可（不建议） |
+
+## 6. 部署
+
+任何静态托管都行（nginx / 宝塔 / OSS / GitHub Pages），把仓库文件原样放上去即可。三点注意：
+
+1. **必须能访问 `cdn.jsdelivr.net`**（three.js 从这里加载）。内网离线环境：把 three@0.160.0 的 `build/` 和 `examples/jsm/` 下载到本地，改 HTML 顶部 importmap 的两个 URL 为相对路径；
+2. three.js 版本**锁死 0.160.0**，不要随意升级 —— examples/jsm 的模块路径和 API（如 OutputPass）跨大版本常有破坏性变更；
+3. 若数据接口与页面不同源，后端必须返回 `Access-Control-Allow-Origin` 响应头。
+
+## 7. 已知限制
+
+- 拓扑变更（增删机器/机柜）不支持热更新，需刷新页面（轮询只改显示值）；
+- 机身屏幕 canvas 为 256×96，IP/型号超过约 15 个字符会溢出裁切；
+- 机柜均布逻辑按 3.3 间距硬编码，超过 ~6 个机柜会超出房间宽度，需同步调房间尺寸；
+- `file://` 直接打开时 fetch 被浏览器禁止，会自动进入演示数据模式（属预期行为，不是 bug）；
+- 移动端未做专门适配（可旋转缩放，但 HUD 布局按桌面设计）。
+
+## 8. 本地开发
+
+```bash
+python3 -m http.server 8823        # 任何静态服务器都行
+# http://localhost:8823/ai-cluster.html
+```
+
+改代码 → 刷新浏览器，没有编译步骤。调试建议开着 DevTools Console：数据源加载失败、轮询失败都会打 warning 并注明原因。
+
 ## License
 
 MIT
