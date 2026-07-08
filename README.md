@@ -2,7 +2,7 @@
 
 用 three.js 构建的**机房数字孪生可视化**：全息线框 → 实体渲染 → 现代机房环境，三个独立页面记录了完整的效果演进。服务器为程序化建模的细节级 2U 机架式机型（硬盘仓、电源环钮、USB、指旋螺丝、型号/IP 显示屏），点击任意一台会弹出毛玻璃质感的科幻信息框，数据可通过配置文件接入真实数据源（数据库 / API）。
 
-纯静态项目：**无构建工具、无 npm 依赖**，three.js 从 CDN 加载，每个 HTML 都是自包含的单文件页面。
+纯静态项目：**无构建工具、无 npm 依赖、可完全离线运行**，three.js 已随仓库本地化（`vendor/three/`），每个 HTML 都是自包含页面。
 
 ## 页面
 
@@ -20,7 +20,7 @@ python3 -m http.server 8823
 # 打开 http://localhost:8823/ai-cluster.html
 ```
 
-需要通过 HTTP 访问（而非双击 file:// 打开），原因有二：`fetch` 读取本地 config/data 文件受浏览器安全限制；不过即使 file:// 打开，页面也会自动降级为内置演示数据，不会白屏。需联网加载 jsdelivr CDN 上的 three.js。
+需要通过 HTTP 访问（而非双击 file:// 打开）：浏览器禁止 file:// 页面用 `fetch` 读取本地模块和 config/data 文件。**无需联网**，three.js 已内置在 `vendor/` 目录。
 
 ## 数据接入
 
@@ -158,6 +158,7 @@ datacenter-twin-3d/
 ├── data.json            # 可选：服务器清单示例（18 台）
 ├── server-detail.html   # 单机 2U 特写（可开盖）
 ├── index.html           # 5 机柜太空全景（早期版本）
+├── vendor/three/        # three.js 0.160.0 本地化（离线部署依赖，勿删）
 └── README.md
 ```
 
@@ -242,10 +243,10 @@ racksData（按 rack 列分组、按 u 列降序排列）
 
 ## 6. 部署
 
-任何静态托管都行（nginx / 宝塔 / OSS / GitHub Pages），把仓库文件原样放上去即可。三点注意：
+任何静态托管都行（nginx / 宝塔 / OSS / GitHub Pages），把仓库文件原样放上去即可。**支持完全离线/内网部署**——three.js 已本地化在 `vendor/three/` 目录（主库 + 13 个插件模块，共 2.1 MB），页面通过相对路径 importmap 加载，运行时不发起任何外网请求。注意：
 
-1. **必须能访问 `cdn.jsdelivr.net`**（three.js 从这里加载）。内网离线环境：把 three@0.160.0 的 `build/` 和 `examples/jsm/` 下载到本地，改 HTML 顶部 importmap 的两个 URL 为相对路径；
-2. three.js 版本**锁死 0.160.0**，不要随意升级 —— examples/jsm 的模块路径和 API（如 OutputPass）跨大版本常有破坏性变更；
+1. `vendor/` 目录必须与 HTML 一起部署，保持相对路径结构不变；
+2. three.js 版本**锁死 0.160.0**（vendor 内文件即此版本），不要随意升级 —— examples/jsm 的模块路径和 API（如 OutputPass）跨大版本常有破坏性变更。如需升级，重新下载对应版本的同名 14 个文件替换 vendor 目录；
 3. 若数据接口与页面不同源，后端必须返回 `Access-Control-Allow-Origin` 响应头。
 
 ## 7. 已知限制
